@@ -2,7 +2,8 @@
 Airline Controller — CRUD endpoints for airlines.
 """
 
-from fastapi import APIRouter, Depends, status
+import os, shutil
+from fastapi import APIRouter, Depends, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from application.providers.database import get_db
@@ -96,6 +97,29 @@ async def update_airline(
     ```
     """
     return await AirlineUsecase(db).update_airline(airline_id, dto)
+
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@router.post(
+    "/{airline_id}/logo",
+    response_model=AirlineResponseDTO,
+    summary="Upload airline logo",
+)
+async def upload_logo(
+    airline_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    ext = os.path.splitext(file.filename)[1] or ".png"
+    filename = f"airline_{airline_id}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return await AirlineUsecase(db).update_logo(airline_id, f"/static/uploads/{filename}")
 
 
 @router.delete(

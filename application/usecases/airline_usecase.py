@@ -46,6 +46,13 @@ class AirlineUsecase:
             raise NotFoundException("Airline", airline_id)
         return AirlineResponseDTO.model_validate(airline)
 
+    async def update_logo(self, airline_id: int, logo_path: str) -> AirlineResponseDTO:
+        airline = self.repo.get_by_id(airline_id)
+        if not airline:
+            raise NotFoundException("Airline", airline_id)
+        updated = self.repo.update(airline, AirlineUpdateDTO(logo=logo_path))
+        return AirlineResponseDTO.model_validate(updated)
+
     async def get_all_airlines(self) -> AirlineListResponseDTO:
         airlines = self.repo.get_all()
         return AirlineListResponseDTO(

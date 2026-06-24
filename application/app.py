@@ -5,9 +5,11 @@ Airline Fuel Management System — FastAPI Application Entry Point.
 import logging
 from contextlib import asynccontextmanager
 
+import os
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from application.config import settings
 
@@ -107,6 +109,12 @@ app.include_router(vendor_router)
 app.include_router(fuel_price_router)
 app.include_router(transaction_router)
 app.include_router(report_router)
+
+
+# ── Static Files (logos, etc.) ────────────────────────────────────────────────
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

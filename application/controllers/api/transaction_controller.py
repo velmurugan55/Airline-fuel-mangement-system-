@@ -12,6 +12,7 @@ from application.dto.transaction_dto import (
     TransactionCreateDTO,
     TransactionResponseDTO,
     InvoiceResponseDTO,
+    TransactionListResponseDTO,
 )
 
 router = APIRouter(prefix="/transactions", tags=["Fuel Transactions"])
@@ -63,6 +64,19 @@ async def create_transaction(
     ```
     """
     return await TransactionUsecase(db).create_transaction(dto)
+
+
+@router.get(
+    "",
+    response_model=TransactionListResponseDTO,
+    summary="List all fuel transactions",
+)
+async def get_all_transactions(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Returns all fuel transactions, newest first."""
+    return await TransactionUsecase(db).get_transactions()
 
 
 @router.get(

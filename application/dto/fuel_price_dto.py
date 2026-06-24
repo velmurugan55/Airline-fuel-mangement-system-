@@ -52,3 +52,7 @@ class FuelPriceResponseDTO(BaseModel):
 class FuelPriceListResponseDTO(BaseModel):
     vendor_id: int
     history: List[FuelPriceResponseDTO]
+
+class FuelPriceGlobalListResponseDTO(BaseModel):
+    total: int
+    data: List[FuelPriceResponseDTO]

@@ -16,3 +16,4 @@ class VendorEntity(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    gst_number: Optional[str] = None

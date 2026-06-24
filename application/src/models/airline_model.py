@@ -17,6 +17,8 @@ class Airline(Base):
     email = Column(String(254), nullable=True)
     phone = Column(String(30), nullable=True)
     address = Column(String(500), nullable=True)
+    gst_number = Column(String(50), nullable=True)
+    logo = Column(String(500), nullable=True)
 
     # One airline -> many transactions
     transactions = relationship("FuelTransaction", back_populates="airline", lazy="select")

@@ -33,6 +33,10 @@ class AirlineCreateDTO(BaseModel):
         None, max_length=500,
         json_schema_extra={"example": "Soekarno-Hatta Airport, Tangerang"},
     )
+    gst_number: Optional[str] = Field(
+        None, max_length=50,
+        json_schema_extra={"example": "27AABCU9603R1ZM"},
+    )
 
 
 class AirlineUpdateDTO(BaseModel):
@@ -41,6 +45,8 @@ class AirlineUpdateDTO(BaseModel):
     email: Optional[str] = Field(None, max_length=254)
     phone: Optional[str] = Field(None, max_length=30)
     address: Optional[str] = Field(None, max_length=500)
+    gst_number: Optional[str] = Field(None, max_length=50)
+    logo: Optional[str] = Field(None, max_length=500)
 
 
 # ── Response DTOs ─────────────────────────────────────────────────────────────
@@ -55,6 +61,8 @@ class AirlineResponseDTO(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    gst_number: Optional[str] = None
+    logo: Optional[str] = None
 
 
 class AirlineListResponseDTO(BaseModel):

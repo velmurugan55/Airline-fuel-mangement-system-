@@ -14,6 +14,7 @@ from application.dto.fuel_price_dto import (
     FuelPriceUpdateDTO,
     FuelPriceResponseDTO,
     FuelPriceListResponseDTO,
+    FuelPriceGlobalListResponseDTO,
 )
 from application.exception.not_found_exception import NotFoundException
 import logging
@@ -64,3 +65,17 @@ class FuelPriceUsecase:
             vendor_id=vendor_id,
             history=[FuelPriceResponseDTO.model_validate(p) for p in prices],
         )
+
+    async def get_all_prices(self) -> FuelPriceGlobalListResponseDTO:
+        prices = self.repo.get_all()
+        return FuelPriceGlobalListResponseDTO(
+            total=len(prices),
+            data=[FuelPriceResponseDTO.model_validate(p) for p in prices],
+        )
+
+    async def delete_price(self, price_id: int) -> dict:
+        price = self.repo.get_by_id(price_id)
+        if not price:
+            raise NotFoundException("FuelPrice", price_id)
+        self.repo.delete(price)
+        return {"message": f"FuelPrice id={price_id} deleted successfully."}

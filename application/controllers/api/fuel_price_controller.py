@@ -13,9 +13,23 @@ from application.dto.fuel_price_dto import (
     FuelPriceUpdateDTO,
     FuelPriceResponseDTO,
     FuelPriceListResponseDTO,
+    FuelPriceGlobalListResponseDTO,
 )
 
 router = APIRouter(prefix="/fuel-prices", tags=["Fuel Prices"])
+
+
+@router.get(
+    "",
+    response_model=FuelPriceGlobalListResponseDTO,
+    summary="Get all fuel prices globally",
+)
+async def get_all_prices(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Returns all fuel prices in the system, newest first."""
+    return await FuelPriceUsecase(db).get_all_prices()
 
 
 @router.post(
@@ -93,3 +107,16 @@ async def get_price_history(
 ):
     """Returns all price entries for a vendor, newest first."""
     return await FuelPriceUsecase(db).get_price_history(vendor_id)
+
+
+@router.delete(
+    "/{price_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a fuel price record",
+)
+async def delete_fuel_price(
+    price_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return await FuelPriceUsecase(db).delete_price(price_id)

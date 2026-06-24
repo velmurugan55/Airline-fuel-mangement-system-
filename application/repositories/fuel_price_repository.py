@@ -20,6 +20,13 @@ class FuelPriceRepository:
     def get_by_id(self, price_id: int) -> Optional[FuelPrice]:
         return self.db.query(FuelPrice).filter(FuelPrice.id == price_id).first()
 
+    def get_all(self) -> List[FuelPrice]:
+        return self.db.query(FuelPrice).order_by(FuelPrice.effective_date.desc()).all()
+
+    def delete(self, price: FuelPrice):
+        self.db.delete(price)
+        self.db.commit()
+
     def get_latest_by_vendor(self, vendor_id: int) -> Optional[FuelPrice]:
         """
         Returns the most recent FuelPrice for a vendor

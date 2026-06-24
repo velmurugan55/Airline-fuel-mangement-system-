@@ -16,3 +16,5 @@ class AirlineEntity(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    gst_number: Optional[str] = None
+    logo: Optional[str] = None

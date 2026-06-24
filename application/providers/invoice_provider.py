@@ -48,6 +48,8 @@ def build_invoice_data(transaction: FuelTransaction) -> dict:
             "email": transaction.airline.email,
             "phone": transaction.airline.phone,
             "address": transaction.airline.address,
+            "gst_number": transaction.airline.gst_number or "",
+            "logo": transaction.airline.logo or "",
         },
         "vendor": {
             "id": transaction.vendor.id,
@@ -57,6 +59,7 @@ def build_invoice_data(transaction: FuelTransaction) -> dict:
             "email": transaction.vendor.email,
             "phone": transaction.vendor.phone,
             "address": transaction.vendor.address,
+            "gst_number": transaction.vendor.gst_number or "",
         },
         "fuel_quantity_liters": float(transaction.fuel_quantity),
         "fuel_price_per_liter": float(transaction.fuel_price),

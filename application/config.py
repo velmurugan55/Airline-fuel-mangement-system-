@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/fuel_system"
+    DATABASE_URL: str = "postgresql+psycopg2://postgres:admin@localhost:5432/fuel_system"
 
     # JWT
     SECRET_KEY: str = "changethis-to-a-very-long-and-secure-random-string"

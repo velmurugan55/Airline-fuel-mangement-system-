@@ -17,6 +17,7 @@ class FuelVendor(Base):
     email = Column(String(254), nullable=True)
     phone = Column(String(30), nullable=True)
     address = Column(String(500), nullable=True)
+    gst_number = Column(String(50), nullable=True)
 
     # One vendor -> many fuel prices
     fuel_prices = relationship("FuelPrice", back_populates="vendor", lazy="select")
