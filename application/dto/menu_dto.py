@@ -38,6 +38,20 @@ class MenuResponseDTO(BaseModel):
     is_active:      bool
     children:       List["MenuResponseDTO"] = []
 
+    @classmethod
+    def from_orm_tree(cls, menu) -> "MenuResponseDTO":
+        return cls(
+            id=menu.id,
+            menu_name=menu.menu_name,
+            menu_code=menu.menu_code,
+            parent_menu_id=menu.parent_menu_id,
+            route_path=menu.route_path,
+            icon=menu.icon,
+            display_order=menu.display_order,
+            is_active=menu.is_active,
+            children=[cls.from_orm_tree(c) for c in (menu.children or [])],
+        )
+
 
 MenuResponseDTO.model_rebuild()
 

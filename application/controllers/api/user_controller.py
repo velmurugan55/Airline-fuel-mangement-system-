@@ -62,6 +62,16 @@ async def update_user(
     return await UserUsecase(db).update_user(user_id, dto, actor_id=actor.id, ip=_ip(request))
 
 
+@router.delete("/{user_id}", summary="Delete user")
+async def delete_user(
+    user_id: int,
+    request: Request,
+    db:      Session = Depends(get_db),
+    actor:   User    = Depends(get_current_user),
+):
+    return await UserUsecase(db).delete_user(user_id, actor_id=actor.id, ip=_ip(request))
+
+
 @router.post("/{user_id}/activate", response_model=UserResponseDTO, summary="Activate user")
 async def activate_user(
     user_id: int,

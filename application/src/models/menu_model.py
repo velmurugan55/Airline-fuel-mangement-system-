@@ -3,7 +3,7 @@ Menu SQLAlchemy Model — supports parent-child hierarchy for nested sidebar gro
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from application.providers.database import Base
 
 
@@ -19,9 +19,9 @@ class Menu(Base):
     display_order  = Column(Integer, default=0, nullable=False)
     is_active      = Column(Boolean, default=True, nullable=False)
 
-    # Self-referential relationship for parent-child
-    children     = relationship("Menu", backref="parent", remote_side=[id], lazy="select")
-    permissions  = relationship("RoleMenuPermission", back_populates="menu", cascade="all, delete-orphan", lazy="select")
+    # Self-referential relationship for parent-child hierarchy
+    children    = relationship("Menu", backref=backref("parent", remote_side=[id]), lazy="select")
+    permissions = relationship("RoleMenuPermission", back_populates="menu", cascade="all, delete-orphan", lazy="select")
 
     def __repr__(self) -> str:
         return f"<Menu id={self.id} code={self.menu_code}>"

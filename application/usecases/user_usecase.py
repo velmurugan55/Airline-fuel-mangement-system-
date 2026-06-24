@@ -73,6 +73,15 @@ class UserUsecase:
         self.audit.log("DEACTIVATE_USER", user_id=actor_id, entity_type="user", entity_id=user_id, ip_address=ip)
         return UserResponseDTO.model_validate(user)
 
+    async def delete_user(self, user_id: int, actor_id: int = None, ip: str = None) -> dict:
+        user = self.repo.get_by_id(user_id)
+        if not user:
+            raise NotFoundException("User", user_id)
+        self.repo.delete_user(user)
+        self.audit.log("DELETE_USER", user_id=actor_id, entity_type="user", entity_id=user_id,
+                       old_value={"username": user.username}, ip_address=ip)
+        return {"message": f"User '{user.username}' deleted."}
+
     async def reset_password(self, user_id: int, dto: UserResetPasswordDTO, actor_id: int = None, ip: str = None) -> dict:
         if dto.new_password != dto.confirm_password:
             raise BadRequestException("Passwords do not match.")

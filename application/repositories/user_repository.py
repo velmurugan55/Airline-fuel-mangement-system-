@@ -129,6 +129,10 @@ class UserRepository:
         self.db.refresh(user)
         return user
 
+    def delete_user(self, user: User) -> None:
+        self.db.delete(user)
+        self.db.commit()
+
     # ── Auth (unchanged logic, adds is_active check) ───────────────────────────
 
     def authenticate(self, username: str, plain_password: str) -> Optional[User]:

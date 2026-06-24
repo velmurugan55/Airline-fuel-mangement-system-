@@ -21,7 +21,7 @@ class MenuUsecase:
         menu = self.repo.create(dto)
         self.audit.log("CREATE_MENU", user_id=actor_id, entity_type="menu", entity_id=menu.id,
                        new_value={"menu_code": menu.menu_code}, ip_address=ip)
-        return MenuResponseDTO.model_validate(menu)
+        return MenuResponseDTO.from_orm_tree(menu)
 
     async def update_menu(self, menu_id: int, dto: MenuUpdateDTO, actor_id: int = None, ip: str = None) -> MenuResponseDTO:
         menu = self.repo.get_by_id(menu_id)
@@ -30,7 +30,7 @@ class MenuUsecase:
         updated = self.repo.update(menu, dto)
         self.audit.log("UPDATE_MENU", user_id=actor_id, entity_type="menu", entity_id=menu_id,
                        new_value=dto.model_dump(exclude_none=True), ip_address=ip)
-        return MenuResponseDTO.model_validate(updated)
+        return MenuResponseDTO.from_orm_tree(updated)
 
     async def delete_menu(self, menu_id: int, actor_id: int = None, ip: str = None) -> dict:
         menu = self.repo.get_by_id(menu_id)
@@ -44,8 +44,8 @@ class MenuUsecase:
         menu = self.repo.get_by_id(menu_id)
         if not menu:
             raise NotFoundException("Menu", menu_id)
-        return MenuResponseDTO.model_validate(menu)
+        return MenuResponseDTO.from_orm_tree(menu)
 
     async def get_all_menus(self) -> MenuListResponseDTO:
         menus = self.repo.get_all()
-        return MenuListResponseDTO(total=len(menus), data=[MenuResponseDTO.model_validate(m) for m in menus])
+        return MenuListResponseDTO(total=len(menus), data=[MenuResponseDTO.from_orm_tree(m) for m in menus])
