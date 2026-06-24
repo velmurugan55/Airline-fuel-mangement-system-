@@ -1,5 +1,5 @@
 """
-Report Controller — invoice report and dashboard endpoints.
+Report Controller — invoice report and dashboard endpoints (with Redis cache).
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -15,6 +15,8 @@ from application.dto.report_dto import (
     InvoiceReportResponseDTO,
     DashboardResponseDTO,
 )
+from application.core.redis import get_redis
+from application.services.cache_service import CacheService
 
 router = APIRouter(prefix="/reports", tags=["Reports & Dashboard"])
 
@@ -30,47 +32,29 @@ async def invoice_report(
     airline_id: Optional[int] = Query(None, description="Filter by airline ID"),
     vendor_id: Optional[int] = Query(None, description="Filter by vendor ID"),
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     """
     Returns a detailed invoice report with line items, totals, and aggregated
     fuel quantity and revenue. All filters are optional and combinable.
-
-    **Sample Request:**
-    ```
-    GET /reports/invoices?from_date=2024-01-01&to_date=2024-12-31&airline_id=1
-    ```
-
-    **Sample Response:**
-    ```json
-    {
-      "total_records": 2,
-      "total_fuel_quantity": 10000.0000,
-      "total_amount": 125000000.0000,
-      "invoices": [
-        {
-          "invoice_no": "INV-20240622-0001",
-          "transaction_date": "2024-06-22",
-          "airline_name": "Garuda Indonesia",
-          "airline_code": "GA",
-          "vendor_name": "PT Pertamina Fuel",
-          "vendor_code": "PT-FUEL",
-          "fuel_quantity": 5000.0000,
-          "fuel_price": 12500.0000,
-          "total_amount": 62500000.0000,
-          "remarks": "Regular refuelling"
-        }
-      ]
-    }
-    ```
+    Results are cached in Redis for 2 minutes.
     """
-    filters = ReportFilterDTO(
-        from_date=from_date,
-        to_date=to_date,
-        airline_id=airline_id,
-        vendor_id=vendor_id,
-    )
-    return await ReportUsecase(db).invoice_report(filters)
+    cache_filters = {
+        "from_date": str(from_date) if from_date else None,
+        "to_date": str(to_date) if to_date else None,
+        "airline_id": airline_id,
+        "vendor_id": vendor_id,
+    }
+    cache = CacheService(redis)
+    cached = await cache.get_invoice_report(cache_filters)
+    if cached is not None:
+        return cached
+
+    dto = ReportFilterDTO(from_date=from_date, to_date=to_date, airline_id=airline_id, vendor_id=vendor_id)
+    result = await ReportUsecase(db).invoice_report(dto)
+    await cache.set_invoice_report(result, cache_filters)
+    return result
 
 
 @router.get(
@@ -84,45 +68,27 @@ async def dashboard_report(
     airline_id: Optional[int] = Query(None, description="Filter by airline ID"),
     vendor_id: Optional[int] = Query(None, description="Filter by vendor ID"),
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     """
-    Returns dashboard KPIs:
+    Returns dashboard KPIs (cached in Redis for 2 minutes):
     - Total transactions, fuel quantity, and revenue for the period
     - Top 5 airlines by fuel consumption
     - Top 5 vendors by fuel dispensed
-
-    **Sample Response:**
-    ```json
-    {
-      "period_from": "2024-01-01",
-      "period_to": "2024-12-31",
-      "total_transactions": 50,
-      "total_fuel_quantity": 250000.0000,
-      "total_revenue": 3125000000.0000,
-      "top_airlines": [
-        {
-          "airline_id": 1,
-          "airline_name": "Garuda Indonesia",
-          "total_fuel": 100000.0000,
-          "total_amount": 1250000000.0000
-        }
-      ],
-      "top_vendors": [
-        {
-          "vendor_id": 1,
-          "vendor_name": "PT Pertamina Fuel",
-          "total_fuel": 200000.0000,
-          "total_amount": 2500000000.0000
-        }
-      ]
-    }
-    ```
     """
-    filters = ReportFilterDTO(
-        from_date=from_date,
-        to_date=to_date,
-        airline_id=airline_id,
-        vendor_id=vendor_id,
-    )
-    return await ReportUsecase(db).dashboard_report(filters)
+    cache_filters = {
+        "from_date": str(from_date) if from_date else None,
+        "to_date": str(to_date) if to_date else None,
+        "airline_id": airline_id,
+        "vendor_id": vendor_id,
+    }
+    cache = CacheService(redis)
+    cached = await cache.get_dashboard(cache_filters)
+    if cached is not None:
+        return cached
+
+    dto = ReportFilterDTO(from_date=from_date, to_date=to_date, airline_id=airline_id, vendor_id=vendor_id)
+    result = await ReportUsecase(db).dashboard_report(dto)
+    await cache.set_dashboard(result, cache_filters)
+    return result

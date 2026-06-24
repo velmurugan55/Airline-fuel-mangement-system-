@@ -1,8 +1,8 @@
 """
-Vendor Controller — CRUD endpoints for fuel vendors.
+Vendor Controller — CRUD endpoints for fuel vendors (with Redis cache).
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.orm import Session
 
 from application.providers.database import get_db
@@ -14,6 +14,9 @@ from application.dto.vendor_dto import (
     VendorResponseDTO,
     VendorListResponseDTO,
 )
+from application.core.redis import get_redis
+from application.core.cache import INVALIDATE_ON_VENDOR_CHANGE, CacheKey, CacheTTL
+from application.services.cache_service import CacheService
 
 router = APIRouter(prefix="/vendors", tags=["Fuel Vendors"])
 
@@ -26,23 +29,14 @@ router = APIRouter(prefix="/vendors", tags=["Fuel Vendors"])
 )
 async def create_vendor(
     dto: VendorCreateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """
-    **Sample Request:**
-    ```json
-    {
-      "vendor_code": "PT-FUEL",
-      "vendor_name": "PT Pertamina Fuel",
-      "contact_person": "Jane Smith",
-      "email": "contact@pertamina.com",
-      "phone": "+62-21-1234-5678",
-      "address": "Jakarta Pusat, DKI Jakarta"
-    }
-    ```
-    """
-    return await VendorUsecase(db).create_vendor(dto)
+    result = await VendorUsecase(db).create_vendor(dto)
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, INVALIDATE_ON_VENDOR_CHANGE)
+    return result
 
 
 @router.get(
@@ -52,9 +46,16 @@ async def create_vendor(
 )
 async def get_all_vendors(
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await VendorUsecase(db).get_all_vendors()
+    cache = CacheService(redis)
+    cached = await cache.get_vendors()
+    if cached is not None:
+        return cached
+    result = await VendorUsecase(db).get_all_vendors()
+    await cache.set_vendors(result)
+    return result
 
 
 @router.get(
@@ -65,9 +66,16 @@ async def get_all_vendors(
 async def get_vendor(
     vendor_id: int,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await VendorUsecase(db).get_vendor(vendor_id)
+    cache = CacheService(redis)
+    cached = await cache.get(CacheKey.vendor(vendor_id))
+    if cached is not None:
+        return cached
+    result = await VendorUsecase(db).get_vendor(vendor_id)
+    await cache.set(CacheKey.vendor(vendor_id), result, CacheTTL.VENDOR_LIST)
+    return result
 
 
 @router.put(
@@ -78,10 +86,15 @@ async def get_vendor(
 async def update_vendor(
     vendor_id: int,
     dto: VendorUpdateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await VendorUsecase(db).update_vendor(vendor_id, dto)
+    result = await VendorUsecase(db).update_vendor(vendor_id, dto)
+    invalidate = INVALIDATE_ON_VENDOR_CHANGE + [CacheKey.vendor(vendor_id)]
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, invalidate)
+    return result
 
 
 @router.delete(
@@ -91,7 +104,12 @@ async def update_vendor(
 )
 async def delete_vendor(
     vendor_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await VendorUsecase(db).delete_vendor(vendor_id)
+    result = await VendorUsecase(db).delete_vendor(vendor_id)
+    invalidate = INVALIDATE_ON_VENDOR_CHANGE + [CacheKey.vendor(vendor_id)]
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, invalidate)
+    return result

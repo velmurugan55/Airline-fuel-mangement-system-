@@ -15,6 +15,10 @@ from application.config import settings
 
 # ── Import all models so Alembic/SQLAlchemy can discover them ─────────────────
 from application.src.models import (  # noqa: F401
+    role_model,
+    menu_model,
+    role_menu_permission_model,
+    audit_log_model,
     user_model,
     airline_model,
     vendor_model,
@@ -29,6 +33,12 @@ from application.controllers.api.vendor_controller import router as vendor_route
 from application.controllers.api.fuel_price_controller import router as fuel_price_router
 from application.controllers.api.transaction_controller import router as transaction_router
 from application.controllers.api.report_controller import router as report_router
+from application.controllers.api.notification_controller import router as notification_router
+from application.controllers.api.user_controller import router as user_router
+from application.controllers.api.role_controller import router as role_router
+from application.controllers.api.menu_controller import router as menu_router
+from application.controllers.api.permission_controller import router as permission_router
+from application.core.redis import init_redis_pool, close_redis_pool
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -43,7 +53,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀  %s is starting up …", settings.PROJECT_NAME)
+    await init_redis_pool()
     yield
+    await close_redis_pool()
     logger.info("🛑  %s is shutting down.", settings.PROJECT_NAME)
 
 
@@ -109,6 +121,11 @@ app.include_router(vendor_router)
 app.include_router(fuel_price_router)
 app.include_router(transaction_router)
 app.include_router(report_router)
+app.include_router(notification_router)
+app.include_router(user_router)
+app.include_router(role_router)
+app.include_router(menu_router)
+app.include_router(permission_router)
 
 
 # ── Static Files (logos, etc.) ────────────────────────────────────────────────
@@ -121,11 +138,13 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 @app.get("/health", tags=["Health"], summary="API health check")
 async def health():
     """Returns 200 OK when the service is running."""
+    from application.core.redis import redis_health
     return {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
+        "redis": await redis_health(),
     }
 
 

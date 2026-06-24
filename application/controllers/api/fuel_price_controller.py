@@ -1,8 +1,8 @@
 """
-Fuel Price Controller — endpoints for managing vendor fuel prices.
+Fuel Price Controller — endpoints for managing vendor fuel prices (with Redis cache).
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.orm import Session
 
 from application.providers.database import get_db
@@ -15,6 +15,10 @@ from application.dto.fuel_price_dto import (
     FuelPriceListResponseDTO,
     FuelPriceGlobalListResponseDTO,
 )
+from application.core.redis import get_redis
+from application.core.cache import INVALIDATE_ON_FUEL_PRICE_CHANGE, CacheKey, CacheTTL
+from application.services.cache_service import CacheService
+from application.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/fuel-prices", tags=["Fuel Prices"])
 
@@ -26,10 +30,17 @@ router = APIRouter(prefix="/fuel-prices", tags=["Fuel Prices"])
 )
 async def get_all_prices(
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """Returns all fuel prices in the system, newest first."""
-    return await FuelPriceUsecase(db).get_all_prices()
+    """Returns all fuel prices in the system, newest first (cached 3 min)."""
+    cache = CacheService(redis)
+    cached = await cache.get_fuel_prices()
+    if cached is not None:
+        return cached
+    result = await FuelPriceUsecase(db).get_all_prices()
+    await cache.set_fuel_prices(result)
+    return result
 
 
 @router.post(
@@ -40,23 +51,25 @@ async def get_all_prices(
 )
 async def create_fuel_price(
     dto: FuelPriceCreateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     """
     Set a new fuel price for a vendor. Each entry is tracked historically.
     The latest entry (by `effective_date`) is used automatically in transactions.
-
-    **Sample Request:**
-    ```json
-    {
-      "vendor_id": 1,
-      "price_per_liter": 12500.0000,
-      "effective_date": "2024-06-22"
-    }
-    ```
     """
-    return await FuelPriceUsecase(db).create_price(dto)
+    result = await FuelPriceUsecase(db).create_price(dto)
+
+    async def _post_create():
+        cache = CacheService(redis)
+        await cache.delete_many_patterns(INVALIDATE_ON_FUEL_PRICE_CHANGE)
+        notif = NotificationService(redis)
+        await notif.notify_price_update("Vendor", float(result.price_per_liter))
+
+    background_tasks.add_task(_post_create)
+    return result
 
 
 @router.put(
@@ -67,14 +80,25 @@ async def create_fuel_price(
 async def update_fuel_price(
     price_id: int,
     dto: FuelPriceUpdateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     """
     Update an existing price entry (e.g., correct a typo).
     To add a new price point, use POST instead.
     """
-    return await FuelPriceUsecase(db).update_price(price_id, dto)
+    result = await FuelPriceUsecase(db).update_price(price_id, dto)
+
+    async def _post_update():
+        cache = CacheService(redis)
+        await cache.delete_many_patterns(INVALIDATE_ON_FUEL_PRICE_CHANGE)
+        notif = NotificationService(redis)
+        await notif.notify_price_update("Vendor", float(result.price_per_liter))
+
+    background_tasks.add_task(_post_update)
+    return result
 
 
 @router.get(
@@ -85,14 +109,17 @@ async def update_fuel_price(
 async def get_latest_price(
     vendor_id: int,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """
-    Returns the most recent fuel price for the given vendor
-    (ordered by `effective_date` DESC). This is the price that will be
-    automatically applied to new fuel transactions.
-    """
-    return await FuelPriceUsecase(db).get_latest_price(vendor_id)
+    """Returns the most recent fuel price for the given vendor (cached 3 min)."""
+    cache = CacheService(redis)
+    cached = await cache.get(CacheKey.latest_price(vendor_id))
+    if cached is not None:
+        return cached
+    result = await FuelPriceUsecase(db).get_latest_price(vendor_id)
+    await cache.set(CacheKey.latest_price(vendor_id), result, CacheTTL.FUEL_PRICE_LIST)
+    return result
 
 
 @router.get(
@@ -103,10 +130,17 @@ async def get_latest_price(
 async def get_price_history(
     vendor_id: int,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """Returns all price entries for a vendor, newest first."""
-    return await FuelPriceUsecase(db).get_price_history(vendor_id)
+    """Returns all price entries for a vendor, newest first (cached 3 min)."""
+    cache = CacheService(redis)
+    cached = await cache.get(CacheKey.price_history(vendor_id))
+    if cached is not None:
+        return cached
+    result = await FuelPriceUsecase(db).get_price_history(vendor_id)
+    await cache.set(CacheKey.price_history(vendor_id), result, CacheTTL.FUEL_PRICE_LIST)
+    return result
 
 
 @router.delete(
@@ -116,7 +150,11 @@ async def get_price_history(
 )
 async def delete_fuel_price(
     price_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await FuelPriceUsecase(db).delete_price(price_id)
+    result = await FuelPriceUsecase(db).delete_price(price_id)
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, INVALIDATE_ON_FUEL_PRICE_CHANGE)
+    return result

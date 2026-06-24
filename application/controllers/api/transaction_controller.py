@@ -1,8 +1,8 @@
 """
-Transaction Controller — fuel transaction endpoints.
+Transaction Controller — fuel transaction endpoints (with cache invalidation + notifications).
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.orm import Session
 
 from application.providers.database import get_db
@@ -14,6 +14,11 @@ from application.dto.transaction_dto import (
     InvoiceResponseDTO,
     TransactionListResponseDTO,
 )
+from application.core.redis import get_redis
+from application.core.cache import INVALIDATE_ON_TRANSACTION_CHANGE
+from application.services.cache_service import CacheService
+from application.services.notification_service import NotificationService
+from application.src.models.user_model import User
 
 router = APIRouter(prefix="/transactions", tags=["Fuel Transactions"])
 
@@ -26,8 +31,10 @@ router = APIRouter(prefix="/transactions", tags=["Fuel Transactions"])
 )
 async def create_transaction(
     dto: TransactionCreateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    redis=Depends(get_redis),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Record a fuel transaction. The system will:
@@ -63,7 +70,20 @@ async def create_transaction(
     }
     ```
     """
-    return await TransactionUsecase(db).create_transaction(dto)
+    result = await TransactionUsecase(db).create_transaction(dto)
+
+    async def _post_create():
+        cache = CacheService(redis)
+        await cache.delete_many_patterns(INVALIDATE_ON_TRANSACTION_CHANGE)
+        notif = NotificationService(redis)
+        await notif.notify_new_transaction(
+            current_user.id,
+            result.invoice_no,
+            float(result.total_amount),
+        )
+
+    background_tasks.add_task(_post_create)
+    return result
 
 
 @router.get(
@@ -73,10 +93,18 @@ async def create_transaction(
 )
 async def get_all_transactions(
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """Returns all fuel transactions, newest first."""
-    return await TransactionUsecase(db).get_transactions()
+    """Returns all fuel transactions, newest first (cached 60 s)."""
+    from application.core.cache import CacheTTL, CacheKey
+    cache = CacheService(redis)
+    cached = await cache.get_transactions()
+    if cached is not None:
+        return cached
+    result = await TransactionUsecase(db).get_transactions()
+    await cache.set_transactions(result)
+    return result
 
 
 @router.get(
@@ -87,10 +115,18 @@ async def get_all_transactions(
 async def get_invoice(
     invoice_no: str,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     """
     Retrieve full invoice details by invoice number (e.g. `INV-20240622-0001`).
     Returns nested airline and vendor information.
     """
-    return await TransactionUsecase(db).get_invoice(invoice_no)
+    from application.core.cache import CacheKey, CacheTTL
+    cache = CacheService(redis)
+    cached = await cache.get(CacheKey.transaction(invoice_no))
+    if cached is not None:
+        return cached
+    result = await TransactionUsecase(db).get_invoice(invoice_no)
+    await cache.set(CacheKey.transaction(invoice_no), result, CacheTTL.TRANSACTION_LIST)
+    return result

@@ -20,6 +20,10 @@ from application.config import settings  # noqa: E402
 # ── Import ALL models so Alembic can detect schema changes ────────────────────
 from application.providers.database import Base  # noqa: E402
 from application.src.models import (  # noqa: F401, E402
+    role_model,
+    menu_model,
+    role_menu_permission_model,
+    audit_log_model,
     user_model,
     airline_model,
     vendor_model,

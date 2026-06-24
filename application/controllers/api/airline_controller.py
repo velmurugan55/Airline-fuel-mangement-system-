@@ -1,9 +1,9 @@
 """
-Airline Controller — CRUD endpoints for airlines.
+Airline Controller — CRUD endpoints for airlines (with Redis cache).
 """
 
 import os, shutil
-from fastapi import APIRouter, Depends, status, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from application.providers.database import get_db
@@ -15,6 +15,9 @@ from application.dto.airline_dto import (
     AirlineResponseDTO,
     AirlineListResponseDTO,
 )
+from application.core.redis import get_redis
+from application.core.cache import INVALIDATE_ON_AIRLINE_CHANGE, CacheKey, CacheTTL
+from application.services.cache_service import CacheService
 
 router = APIRouter(prefix="/airlines", tags=["Airlines"])
 
@@ -27,25 +30,14 @@ router = APIRouter(prefix="/airlines", tags=["Airlines"])
 )
 async def create_airline(
     dto: AirlineCreateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """
-    Register a new airline in the system.
-
-    **Sample Request:**
-    ```json
-    {
-      "airline_code": "GA",
-      "airline_name": "Garuda Indonesia",
-      "contact_person": "John Doe",
-      "email": "ops@garuda.com",
-      "phone": "+62-21-2351-9999",
-      "address": "Soekarno-Hatta Airport, Tangerang"
-    }
-    ```
-    """
-    return await AirlineUsecase(db).create_airline(dto)
+    result = await AirlineUsecase(db).create_airline(dto)
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, INVALIDATE_ON_AIRLINE_CHANGE)
+    return result
 
 
 @router.get(
@@ -55,10 +47,17 @@ async def create_airline(
 )
 async def get_all_airlines(
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """Returns a paginated list of all registered airlines."""
-    return await AirlineUsecase(db).get_all_airlines()
+    """Returns a paginated list of all registered airlines (cached 5 min)."""
+    cache = CacheService(redis)
+    cached = await cache.get_airlines()
+    if cached is not None:
+        return cached
+    result = await AirlineUsecase(db).get_all_airlines()
+    await cache.set_airlines(result)
+    return result
 
 
 @router.get(
@@ -69,9 +68,16 @@ async def get_all_airlines(
 async def get_airline(
     airline_id: int,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await AirlineUsecase(db).get_airline(airline_id)
+    cache = CacheService(redis)
+    cached = await cache.get(CacheKey.airline(airline_id))
+    if cached is not None:
+        return cached
+    result = await AirlineUsecase(db).get_airline(airline_id)
+    await cache.set(CacheKey.airline(airline_id), result, CacheTTL.AIRLINE_LIST)
+    return result
 
 
 @router.put(
@@ -82,21 +88,15 @@ async def get_airline(
 async def update_airline(
     airline_id: int,
     dto: AirlineUpdateDTO,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    """
-    Partially update airline fields. Only provided fields will be modified.
-
-    **Sample Request:**
-    ```json
-    {
-      "email": "newemail@garuda.com",
-      "phone": "+62-21-9999-0000"
-    }
-    ```
-    """
-    return await AirlineUsecase(db).update_airline(airline_id, dto)
+    result = await AirlineUsecase(db).update_airline(airline_id, dto)
+    invalidate = INVALIDATE_ON_AIRLINE_CHANGE + [CacheKey.airline(airline_id)]
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, invalidate)
+    return result
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static", "uploads")
@@ -110,8 +110,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 )
 async def upload_logo(
     airline_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
     ext = os.path.splitext(file.filename)[1] or ".png"
@@ -119,7 +121,9 @@ async def upload_logo(
     filepath = os.path.join(UPLOAD_DIR, filename)
     with open(filepath, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    return await AirlineUsecase(db).update_logo(airline_id, f"/static/uploads/{filename}")
+    result = await AirlineUsecase(db).update_logo(airline_id, f"/static/uploads/{filename}")
+    background_tasks.add_task(CacheService(redis).delete, CacheKey.airline(airline_id), CacheKey.AIRLINE_LIST)
+    return result
 
 
 @router.delete(
@@ -129,7 +133,12 @@ async def upload_logo(
 )
 async def delete_airline(
     airline_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    redis=Depends(get_redis),
     _=Depends(get_current_user),
 ):
-    return await AirlineUsecase(db).delete_airline(airline_id)
+    result = await AirlineUsecase(db).delete_airline(airline_id)
+    invalidate = INVALIDATE_ON_AIRLINE_CHANGE + [CacheKey.airline(airline_id)]
+    background_tasks.add_task(CacheService(redis).delete_many_patterns, invalidate)
+    return result
